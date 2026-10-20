@@ -6,7 +6,7 @@ A household document pipeline built on [Paperless-ngx](https://docs.paperless-ng
 
 This repo is a write-up of a setup that has been running for real, written as a plan so you can build something similar on whatever hardware you have. It covers the architecture, the decisions behind it, a benchmark of a **local LLM (Ollama + Qwen3 30B)** against several cloud models, the backup and maintenance setup, and the mistakes we made along the way.
 
-> **Status:** live since October 2026. Roughly 900 documents (an old archive imported, plus ongoing scans and five mailboxes). Numbers in this repo come from that setup.
+> **Status:** live since October 2026. About 1,000 documents (an old archive imported and reviewed, plus ongoing scans and five mailboxes). Numbers in this repo come from that setup.
 
 ## Contents
 
@@ -130,7 +130,8 @@ Work through it in this order. Each step is useful on its own, and the order put
 - **Documents without an owner are visible to every user.** Scanner documents had no owner, so another household member saw private documents. Fix: a workflow sets the owner on consumption; sharing happens only through tags.
 - **Own-name correspondents are poison.** Correspondents named after yourself matched literally on almost every letter (your name is in the address field) and alone sent 34 of 51 benchmark documents to review. Delete them, or set their matching to "none".
 - **Check the "inbox tag" flag on every tag.** One normal tag had it set by accident, so Paperless counted all its documents as "in the inbox".
-- **Paperless's own classifier learns from your corrections; the LLM tagger doesn't.** If you correct the same thing repeatedly, sharpen that tag's description in the tagger prompt instead.
+- **Paperless's own classifier only learns what's set to "Auto".** It retrains from your corrections, but only for correspondents, types and tags whose matching is "Auto". Ours had that on 15 of 173 correspondents, so it learned almost nothing. Its suggestions are available for free from the API (`/api/documents/<id>/suggestions/`, no LLM involved; the separate AI-suggestions endpoint does call the LLM).
+- **Make the LLM tagger learn from your filing.** Giving the model the 3 most similar already-filed documents as examples raised correct correspondents from 104 to 123 of 137 corrected documents, at the same cost. See [docs/tagger.md](docs/tagger.md#learning-from-your-corrections).
 - **Bulk imports need throttling.** On a Pi 5, Paperless handles about 20 PDFs per 10 minutes (OCR + AI index). Feed batches only when the consume queue is empty, and not at night if the box sits in a bedroom (it gets loud).
 - **Old documents get odd dates.** 17 of 482 imported archive documents ended up dated 1980. Review dates after a bulk import.
 
@@ -139,7 +140,8 @@ Work through it in this order. Each step is useful on its own, and the order put
 - **Splitting multi-document scans is the hard part.** Field extraction was nearly a tie between models; splits separated them. Rules that helped: enclosures (terms, price lists, statements) stay with their cover letter; confidence high only when every part starts with its own address block and date; mailing sheet counters (`0005/0044`) are checked in code, not left to the model.
 - **Benchmark honestly.** Our first round was tuned and scored on the same documents, with expected values written after seeing one model's output. The second round used fresh scans with expected values committed before any model ran. Only the second round is a fair comparison.
 - **Shared provider pools rate-limit.** Mistral Small via OpenRouter's shared pool failed on 15 of 42 documents. For a nightly job, use a provider with dedicated capacity or your own key.
-- **The review step must clear both tags.** If you only remove the review tag and leave `Inbox`, the next run treats the document as new and overwrites your edits.
+- **The review step must clear both tags.** If you only remove the review tag and leave `Inbox`, the next run treats the document as new and tags it again, and it doesn't count as a learning example. We re-ran 206 documents by accident this way.
+- **A big review pile goes faster in batches with one confirmation.** After the archive import, 315 documents were flagged. An agent read them all and sorted them into four lists (delete: not paperwork; delete: near-copies; fix; fine), the owner confirmed once, and the pile was cleared: 117 trashed, 63 fixed, the rest just unflagged. Deleted documents stay in the Paperless trash for 30 days.
 
 **Infrastructure**
 - **A forced-command SSH key means every login is a real run.** The local-LLM box had a key that ran the tagger and powered off on login. Use a separate admin key for anything else, and never "just test" the forced-command key.
@@ -165,6 +167,7 @@ Work through it in this order. Each step is useful on its own, and the order put
 
 - An Ollama backend on a GPU box: the CPU-only run was the main reason local lost on speed (see [docs/local-llm-ollama.md](docs/local-llm-ollama.md)).
 - A fully local variant (local embeddings + local tagger) for people who want no document text to leave the house.
+- Setting more correspondents and types to "Auto" matching so Paperless's free classifier learns more (risk: it then assigns them on consumption, and wrong guesses stick unless the tagger may override them).
 - Deduplicating rescans by content (same month and run number for payslips, for example) instead of by checksum.
 
 ## About the tagger code

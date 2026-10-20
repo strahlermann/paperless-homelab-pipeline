@@ -24,7 +24,27 @@ Input: every document that has `Inbox` and doesn't have the review tag.
 5. **Deadline:** a future deadline sets the `Frist` tag. A Paperless workflow sends a push three days before the date.
 6. Write back via the API, then either remove `Inbox` (done) or add the review tag plus a note.
 
-The prompt includes the household's names, the existing correspondents, document types and tag definitions, so the model can reuse what exists instead of inventing near-duplicates. The model answers in a fixed JSON schema with a confidence per field.
+The prompt includes the 3 most similar filed documents as examples (see [Learning from your corrections](#learning-from-your-corrections)), the household's names, the existing correspondents, document types and tag definitions, so the model can reuse what exists instead of inventing near-duplicates. The model answers in a fixed JSON schema with a confidence per field.
+
+## Learning from your corrections
+
+An LLM doesn't learn from your edits by itself. The tagger now feeds them back as context:
+
+1. **Similar filed documents as examples.** Before each document, the tagger looks up the 3 most similar documents that are already filed (no `Inbox`, no review tag) and puts them into the prompt with their final correspondent, document type and topic tags. When you correct a document, the next similar one benefits right away. If your filing clearly backs a correspondent, the tagger accepts it even when that exact name isn't in the text (for example after you renamed a correspondent).
+2. **Paperless's own suggestions as a hint.** `GET /api/documents/<id>/suggestions/` returns what Paperless's built-in classifier would assign. It costs nothing (no LLM call; the separate AI-suggestions endpoint is the one that calls the LLM). The catch: the classifier only learns correspondents, types and tags whose matching is set to **Auto**.
+
+Results on 137 documents the owner had corrected, dry run, old tagger vs new:
+
+| | Before | Similar documents | + Paperless hint |
+|---|---|---|---|
+| Correspondent right | 104 | 123 | 123 |
+| Document type right | 95 | 102–103 | 104 |
+| Flagged for review | 98 | 77–78 | 74 |
+| Cost per document | ~0.2 ct | ~4% more prompt text | same |
+
+Almost all the gain came from the similar documents; the Paperless hint was within run-to-run noise here, because few of our correspondents use Auto matching. One new failure mode: a document got a correspondent copied from two similar examples that was wrong, though it was still flagged for review. Note that the test set overlaps with the examples the tagger can draw on, so treat the numbers as optimistic.
+
+This only works if reviewed documents lose **both** the review tag and `Inbox`: documents that still carry either are not used as examples.
 
 ## Guards
 

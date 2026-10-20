@@ -37,6 +37,8 @@ The day-to-day work then ran in a **Claude project**: one shared chat where the 
 | Maintenance | Built the 2-monthly wake, update, scrub and power-off run |
 | Mail accounts | Prepared mail rules, previewed what they would import, caught the missing duplicate rejection |
 | Old archive | Surveyed the desktop's folders by file name only, then copied and fed ~860 PDFs in throttled batches |
+| Review pile | Read 315 flagged documents and sorted them into four lists (delete as not paperwork, delete near-copies, fix, fine), then applied them after one confirmation |
+| Tagger learns from corrections | Added similar filed documents and Paperless's classifier suggestions to the prompt, tested old vs new on 137 corrected documents, then switched it on |
 | This write-up | Read the runbook and all threads and wrote this repo |
 
 A coordinating agent watched the project chat, kept a shared memory file of facts and decisions (for example "the desktop is normally off", "never use the tagger key"), and handed each new thread what it needed to know.
