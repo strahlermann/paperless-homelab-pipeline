@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# AI-generated (Claude Code), tested on Raspberry Pi OS (Debian 13) and Manjaro.
+# Paperless backup with restic (runs as root). Repos are encrypted by restic itself.
+#   paperless-backup offsite        export + pg_dump, then backup/forget/prune to the off-site repo (nightly timer)
+#   paperless-backup nas            backup/forget/prune of the same staged data to the NAS repo
+#                                   (start it while the NAS box is awake, e.g. from the maintenance run)
+#   paperless-backup init <repo>    create the repo (offsite|nas) if it doesn't exist yet
+#   paperless-backup restore-test <repo>   restore 3 original documents into /tmp and compare checksums
+#   paperless-backup snapshots <repo>
+# Assumes the default compose project in /srv/paperless (containers paperless-webserver-1, paperless-db-1).
+set -uo pipefail
+umask 077
+
+CONF_DIR=/etc/paperless-backup
+# shellcheck source=/dev/null
+source "$CONF_DIR/config"     # NTFY_URL, OFFSITE_REPO, NAS_REPO, RESTORE_OWNER
+
+MODE="${1:-}"
+HOST_TAG=$(hostname -s)
+STAGING=/srv/paperless-backup-staging
+EXPORT=/srv/paperless/export
+PATHS=("$EXPORT" "$STAGING" /srv/paperless/docker-compose.yml /srv/paperless/docker-compose.env /srv/paperless/.env /srv/paperless/secrets)
+export RESTIC_PASSWORD_FILE="$CONF_DIR/restic-password"
+export RESTIC_CACHE_DIR=/var/cache/restic
+
+log() { echo "$*"; }
+notify() {  # notify <title> <message> [priority]
+    log "NOTIFY [$1] $2"
+    curl -fsS -m 20 -o /dev/null -H "Title: $1" -H "Priority: ${3:-default}" -H "Tags: floppy_disk" \
+        --data-binary "$2" "$NTFY_URL" || log "WARN: ntfy notification failed"
+}
+fail() { notify "Backup $MODE: FAILED" "$1" high; exit 1; }
+
+repo_for() {
+    case "$1" in
+        offsite) echo "$OFFSITE_REPO" ;;
+        nas)     echo "$NAS_REPO" ;;
+        *) echo "unknown repo '$1' (offsite|nas)" >&2; exit 2 ;;
+    esac
+}
+
+export_data() {
+    mkdir -p "$STAGING"
+    docker exec -u paperless paperless-webserver-1 /command/with-contenv \
+        python3 manage.py document_exporter ../export --delete --no-progress-bar \
+        || fail "document_exporter failed."
+    docker exec paperless-db-1 pg_dump -U paperless -d paperless --format=custom \
+        > "$STAGING/paperless-db.dump.tmp" || fail "pg_dump failed."
+    [[ -s "$STAGING/paperless-db.dump.tmp" ]] || fail "pg_dump wrote an empty file."
+    mv "$STAGING/paperless-db.dump.tmp" "$STAGING/paperless-db.dump"
+}
+
+run_restic() {  # run_restic <repo-url>; prints a short log, non-zero on failure
+    export RESTIC_REPOSITORY="$1"
+    restic backup --host "$HOST_TAG" --tag paperless "${PATHS[@]}" 2>&1 | tail -n 12 || return 1
+    restic forget --host "$HOST_TAG" --tag paperless --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune 2>&1 \
+        | tail -n 5 || return 1
+}
+
+case "$MODE" in
+    init)
+        export RESTIC_REPOSITORY; RESTIC_REPOSITORY=$(repo_for "${2:-}")
+        restic cat config >/dev/null 2>&1 && { log "Repo ${2} already initialised."; exit 0; }
+        restic init ;;
+    snapshots)
+        RESTIC_REPOSITORY=$(repo_for "${2:-}") restic snapshots ;;
+    restore-test)
+        export RESTIC_REPOSITORY; RESTIC_REPOSITORY=$(repo_for "${2:-}")
+        DEST=/tmp/paperless-restore-test
+        rm -rf "$DEST"; mkdir -p "$DEST"
+        # three originals from the latest snapshot (no thumbnails, no archive versions, no manifests)
+        mapfile -t FILES < <(restic ls --host "$HOST_TAG" latest "$EXPORT" | grep -vE -- '-(thumbnail|archive)\.|\.json$' \
+                             | grep -E "^$EXPORT/.+\.[A-Za-z0-9]+\$" | shuf -n 3)
+        (( ${#FILES[@]} == 3 )) || { echo "found only ${#FILES[@]} candidate files" >&2; exit 1; }
+        INC=(); for f in "${FILES[@]}"; do INC+=(--include "$f"); done
+        restic restore --host "$HOST_TAG" latest --target "$DEST" "${INC[@]}" || exit 1
+        RC=0
+        for f in "${FILES[@]}"; do
+            a=$(sha256sum < "$DEST$f" | cut -d' ' -f1); b=$(sha256sum < "$f" | cut -d' ' -f1)
+            if [[ "$a" == "$b" ]]; then echo "OK   $f ($(stat -c %s "$DEST$f") bytes)"; else echo "DIFF $f"; RC=1; fi
+        done
+        [[ -n ${RESTORE_OWNER:-} ]] && chown -R "$RESTORE_OWNER:" "$DEST"
+        exit $RC ;;
+    offsite|nas)
+        exec 9>/run/paperless-backup.lock
+        flock -w 3600 9 || fail "Could not get the lock (another backup run stuck?)."
+        if [[ "$MODE" == offsite ]]; then
+            export_data
+        else
+            [[ -s "$STAGING/paperless-db.dump" ]] || fail "No staged data, the nightly export didn't run."
+        fi
+        OUT=$(run_restic "$(repo_for "$MODE")") || fail "restic failed: $(tail -n 3 <<<"$OUT")"
+        log "$OUT"
+        SUMMARY=$(grep -E '^(Added to the repository|processed|snapshot .* saved)' <<<"$OUT" | tr '\n' ' ')
+        notify "Backup $MODE: OK" "${SUMMARY:-done}" low ;;
+    *) sed -n 2,9p "$0" >&2; exit 2 ;;
+esac
