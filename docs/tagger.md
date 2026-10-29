@@ -71,6 +71,10 @@ Prompt rules that fixed most errors:
 
 Long single documents (an 88-page bank mailing) were the classic false positive until the sheet-counter check moved into code.
 
+**Finishing a split.** The split runs inside Paperless as a background task, and on the Pi the parts needed 20 to 45 minutes to show up. The first version waited a fixed time (10 minutes plus 45 seconds per page), then gave up and kept the original with a note. That left 7 originals next to their parts before anyone noticed. Now the run doesn't wait at all: the request goes into a small state file, and every 15-minute run checks it. The original goes to the trash only when all parts exist; if parts are still missing after 24 hours, it gets `Prüfen` and a note.
+
+**Threshold.** We considered lowering the split threshold from 0.85 to 0.80, because Haiku gave 0.80 on two benchmark scans whose ranges were right. The live history said no: of the 10 real proposals between 0.80 and 0.85, the human reviewer split none (8 kept whole, 2 deleted). Check your own review history before you move it.
+
 ## The review workflow (for the humans)
 
 1. Open a saved view "Review" (documents with the review tag), shown on the dashboard and in the sidebar.

@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Runs tagger.py on pi5 with Claude Haiku via OpenRouter, but only when the Inbox has work.
+# Started every 15 min by paperless-tagger.timer (systemd user unit). Writes to Paperless.
+#   paperless-tagger-run            normal run
+#   paperless-tagger-run --dry-run  show what would change, write nothing (extra args go to tagger.py)
+set -uo pipefail
+REPO="${TAGGER_REPO:-$HOME/homelab/tagger}"
+CONFIG="$HOME/.config/pi-tagger/config"          # NTFY_URL
+STATE="$HOME/.local/state/paperless-tagger"; mkdir -p "$STATE"
+# shellcheck source=/dev/null
+source "$CONFIG"
+
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/paperless-tagger.lock"
+flock -n 9 || { echo "another run is active"; exit 0; }
+
+DRY=(); [[ "${1:-}" == "--dry-run" ]] && { DRY=(--dry-run); shift; }
+notify() {  # notify <title> <message> [priority]
+    [[ ${#DRY[@]} -gt 0 || -z "${NTFY_URL:-}" ]] && return 0
+    curl -fsS -m 20 -o /dev/null -H "Title: $1" -H "Priority: ${3:-default}" -H "Tags: page_facing_up" \
+        --data-binary "$2" "$NTFY_URL" || echo "WARN: ntfy failed"
+}
+
+# Cheap pre-check without Python or the API key: Inbox documents not waiting in "Prüfen".
+# shellcheck source=/dev/null
+set -a; source "$REPO/.env"; set +a
+api() { printf 'header = "Authorization: Token %s"\n' "$PAPERLESS_TOKEN" | curl -fsS -m 30 -K - "$PAPERLESS_URL$1"; }
+tag_id() { api "/api/tags/?name__iexact=$(jq -rn --arg s "$1" '$s|@uri')" | jq -er '.results[0].id'; }
+inbox=$(tag_id Inbox) || { echo "Paperless not reachable"; exit 0; }   # Paperless down: try again next time
+review=$(tag_id "Prüfen" || echo "")
+q="/api/documents/?page_size=1&tags__id__all=$inbox${review:+&tags__id__none=$review}"
+work=$(api "$q" | jq -r '.count') || { echo "Paperless query failed"; exit 0; }
+if [[ "$work" == 0 && $# -eq 0 ]]; then echo "Inbox empty, nothing to do"; exit 0; fi
+echo "$work document(s) waiting"
+
+LLM_API_KEY=$(docker exec paperless-webserver-1 cat /run/secrets/openrouter_api_key) \
+    || { notify "Tagger: Fehler" "OpenRouter-Key nicht lesbar (docker exec)" high; exit 1; }
+export LLM_API_KEY TAGGER_ENV_FILE="$REPO/.env" TAGGER_LOG_FILE="$STATE/tagger.log"
+out=$("$REPO/.venv/bin/python" "$REPO/tagger.py" "${DRY[@]}" \
+    --backend openai --llm-url https://openrouter.ai/api/v1 --model anthropic/claude-haiku-5.5 \
+    --llm-extra '{"temperature": null, "provider": {"zdr": true, "data_collection": "deny"}}' "$@")
+rc=$?
+echo "$out"
+summary=$(tail -n1 <<<"$out")
+if (( rc != 0 )); then
+    notify "Tagger: Fehler" "${summary:-tagger.py rc=$rc} (Log: $STATE/tagger.log)" high
+elif [[ -n "$summary" && "$summary" != "Paperless-Tagger: Keine neuen Dokumente im Inbox." ]]; then
+    # (that summary means: only splits waiting for their parts, which keep the original in the Inbox)
+    notify "Tagger fertig" "$summary"
+fi
+exit $rc

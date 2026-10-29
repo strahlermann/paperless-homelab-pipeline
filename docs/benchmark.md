@@ -72,6 +72,42 @@ Prompt improvements between rounds raised Haiku's splits on the tuning set from 
 
 Claude Haiku via OpenRouter, running on the always-on box every 15 minutes. Most accurate on fresh documents, no harmful splits, fast, cheap, and the heavy box no longer has to be woken. First live run: 19 scans tagged in 2.5 minutes.
 
+## Round 3: Paperless' built-in assignment vs the tagger
+
+Paperless-ngx 3.3 has two built-in ways to fill in metadata, and both were run on the 37 benchmark documents that still existed (read only; [tagger/bench/paperless_builtin.py](../tagger/bench/paperless_builtin.py)):
+
+- **Classic matching:** the classifier Paperless trains on your filed documents, plus match rules. It only knows correspondents, types and tags set to "Auto" matching.
+- **Paperless AI:** the same Claude Haiku 5.5 through OpenRouter, with similar documents from the embedding index as context (the document itself excluded).
+
+Two references: **A** = the expected values written for rounds 1 and 2, **B** = what is filed in Paperless today after human review (it has gaps, and includes document types created after A).
+
+| Field (A · B) | Tagger (Haiku) | Paperless AI | Classic |
+|---|---|---|---|
+| Correspondent | 33/33 · 32/37 | 33/33 · 32/37 | 13/33 · 17/37 |
+| Document type | **18/33 · 28/37** | 13/33 · 20/37 | 1/33 · 12/37 |
+| Date | 29/31 · 34/37 | 29/31 · **36/37** | 11/31 · 10/37 |
+| Child tags | **33/33 · 37/37** | 31/33 · 35/37 | 26/33 · 29/37 |
+| Topic tags | **29/33** · 25/37 | 23/33 · 24/37 | 3/33 · 7/37 |
+| Time for 37 documents | 5.4 min, $0.11 | 2.9 min | 6 s |
+
+- **Paperless AI** matches the tagger on correspondent and date, but picks other document types more often (reminder, certificate, application where a plain letter is filed), leaves some types empty and over-tags topics. It has no amount, deadline, invoice number, split or review flag, and it only suggests: you click through the suggestions per document. Each document costs two calls when an output language is set (the second one translates).
+- **Classic matching** loses clearly, even though it was trained on these very documents.
+- **Verdict:** keep the tagger. Paperless AI adds nothing it doesn't already do.
+
+## OpenRouter's Auto Router
+
+`openrouter/auto` picks a model per request; a `cost_tier` (`low` to `max`) sets the price band. Same 37 documents, `provider.require_parameters` so only models with structured output qualify:
+
+| | Haiku 5.5 (fixed) | Auto, medium | Auto, high |
+|---|---|---|---|
+| Models it routed to | – | DeepSeek V4.1 Flash, Gemini 3.8 Flash, GLM 5.3 | GPT-6.1 Sol, Gemini 3.8 Flash, Sonnet 5.5 |
+| Document type (A · B) | 18/33 · **28/37** | 17/33 · 26/37 | **20/33** · 27/37 |
+| Topic tags (A · B) | **29/33** · 25/37 | 29/33 · 25/37 | 24/33 · **28/37** |
+| Other fields | equal within one document | | |
+| Cost, time | **$0.11, 5.4 min** | $0.22, 8.4 min | $0.89, 8.7 min |
+
+No gain beyond noise, at two to eight times the cost. The router also switched models between the calls for one document (split check on one model, tagging on another) and ranks models by what other OpenRouter users spent on a task type in the last seven days, so what a tier means can change from week to week. If you want a stronger model, pin one, for example only for documents the tagger already flags for review.
+
 ## Caveats
 
 - Small sample: 20 fresh documents, only two real mixed scans in the tuning set. Treat percentages as ±5–10 points.

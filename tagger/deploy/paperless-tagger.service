@@ -1,0 +1,8 @@
+[Unit]
+Description=Paperless tagger (Claude Haiku via OpenRouter) if the Inbox has work
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/paperless-tagger-run
+TimeoutStartSec=3h

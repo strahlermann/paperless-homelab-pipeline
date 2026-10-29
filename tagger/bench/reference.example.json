@@ -1,0 +1,24 @@
+{
+ "_about": "Expected values per document id, written BEFORE any run. Each field lists every acceptable answer. date: 'keep' = the date the document had before the run. shared/topic: lists of tag sets. split: page ranges, only for multi-document scans. skip: leave the document out (e.g. no OCR text).",
+ "101": {
+  "corr": ["Stadtwerke Musterstadt"],
+  "type": ["Rechnung"],
+  "date": ["2026-03-14"],
+  "betrag": ["EUR84.20"],
+  "frist": ["2026-04-01"],
+  "rechnr": ["R-2026-00417"],
+  "shared": [[]],
+  "topic": [["Wohnen"]],
+  "note": "electricity bill, single page"
+ },
+ "102": {
+  "corr": ["Grundschule Musterstadt"],
+  "type": ["Schreiben / Information"],
+  "date": ["keep", "2026-02-02"],
+  "betrag": [null], "frist": [null], "rechnr": [null],
+  "shared": [["Kinder", "Mia"]],
+  "topic": [["Schule"]],
+  "split": [[1, 2], [3, 3]],
+  "note": "parents' letter (pages 1-2) plus a separate form (page 3) scanned in one pass"
+ }
+}

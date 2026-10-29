@@ -1,0 +1,19 @@
+{
+ "_about": "Copy to household.json and fill in. household: every way the members' names appear on letters (they are never a correspondent). children: first names, each one is also a Paperless tag. partner (optional): documents addressed to this person get the tag; a Paperless workflow can make that user the owner.",
+ "household": [
+  "Alex Beispiel",
+  "Alexander Beispiel",
+  "Sam Muster",
+  "Mia Muster",
+  "Leo Muster"
+ ],
+ "children": [
+  "Leo",
+  "Mia"
+ ],
+ "partner": {
+  "first_name": "Sam",
+  "last_name": "Muster",
+  "tag": "Sam"
+ }
+}

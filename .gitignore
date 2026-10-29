@@ -1,0 +1,6 @@
+# Local config and run output of the tagger (see tagger/README.md)
+tagger/.env
+tagger/household.json
+tagger/runs/
+tagger/.venv/
+__pycache__/

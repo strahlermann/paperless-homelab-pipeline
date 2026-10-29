@@ -15,9 +15,10 @@ This repo is a write-up of a setup that has been running for real, written as a 
 | this README | Goal, architecture, hardware roles, build plan, lessons learned |
 | [docs/tagger.md](docs/tagger.md) | How the LLM tagger works, the review workflow, splitting multi-document scans |
 | [docs/local-llm-ollama.md](docs/local-llm-ollama.md) | Running the tagger on a local Ollama box with Wake-on-LAN, and when that's worth it |
-| [docs/benchmark.md](docs/benchmark.md) | Local Qwen vs Claude Haiku vs Mistral Small/Large: accuracy, splits, speed, cost |
+| [docs/benchmark.md](docs/benchmark.md) | Local Qwen vs Claude Haiku vs Mistral Small/Large, Paperless' built-in AI and OpenRouter's Auto Router: accuracy, splits, speed, cost |
 | [docs/backups-and-maintenance.md](docs/backups-and-maintenance.md) | restic to an off-site VPS and a NAS, restore tests, the 2-monthly maintenance run |
 | [docs/how-it-was-built.md](docs/how-it-was-built.md) | How AI agents (Claude Code Remote Control sessions on the Pi, driving the local-AI desktop over SSH) built and run this, and the safety rules |
+| [tagger/](tagger/) | The tagger code: script, systemd units, benchmark and test scripts. See [tagger/README.md](tagger/README.md) |
 | [scripts/](scripts/) | The backup scripts, cleaned up and parameterised |
 
 ---
@@ -172,4 +173,4 @@ Work through it in this order. Each step is useful on its own, and the order put
 
 ## About the tagger code
 
-The tagger is a single Python script in a private repo. This write-up describes its design in enough detail to rebuild it ([docs/tagger.md](docs/tagger.md)); the code itself may be published separately.
+The tagger is a single Python script, published in [tagger/](tagger/) together with its systemd units and the benchmark and test scripts. It's the code that runs in this setup; only the household's names were moved into a config file (`household.json`, not in the repo). The prompts and tag definitions are German. [docs/tagger.md](docs/tagger.md) explains the design.
